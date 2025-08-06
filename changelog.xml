@@ -1,0 +1,10 @@
+<changelogs>
+    <changelog>
+        <element>so-SO</element>
+        <type>language</type>
+        <version>5.3.2.0</version>
+        <add>
+            <item>First release</item>
+        </add>
+    </changelog>
+</changelogs>
