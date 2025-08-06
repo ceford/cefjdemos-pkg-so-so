@@ -6,12 +6,12 @@
 	<creationDate>2025-08-06</creationDate>
 	<author>Clifford E Ford</author>
 	<authorEmail>cliff@ford.myzen.co.uk</authorEmail>
-	<authorUrl>https://github.com/ceford/cefjdemos-pkg-os-os</authorUrl>
+	<authorUrl>https://github.com/ceford/cefjdemos-pkg-so-so</authorUrl>
 	<copyright>(C) 2025 Clifford E Ford. All rights reserved.</copyright>
 	<license>GNU General Public License version 2 or later; see LICENSE.txt</license>
-	<url>https://github.com/ceford/cefjdemos-pkg-os-os</url>
+	<url>https://github.com/ceford/cefjdemos-pkg-so-so</url>
 	<packager>Clifford E Ford</packager>
-	<packagerurl>https://github.com/ceford/cefjdemos-pkg-os-os</packagerurl>
+	<packagerurl>https://github.com/ceford/cefjdemos-pkg-so-so</packagerurl>
 	<description><![CDATA[Somali translation created by openai.com]]></description>
 	<blockChildUninstall>true</blockChildUninstall>
 	<files>
