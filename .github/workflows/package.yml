@@ -1,57 +1,75 @@
-name: Build Joomla Language Extension Package
+name: Build and Release Joomla Language Packages
 
 on:
-
   push:
     branches:
-      - joomla5
+      - joomla5  # or your main development branch
       - joomla6
-
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Custom version (optional, overrides pkg_so-SO.xml <version>)'
-        required: false
-      forceRebuild:
-        description: 'Force rebuild all zip files (true/false)'
-        required: false
-        default: 'false'
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
 
 env:
   EXTENSION_NAME: pkg_so-SO
   LANGUAGE_CODE: so-SO
-  LC_LANGUAGE_CODE: so-so
+  LANGUAGE_NAME: Somali
+  # Joomla Versions
+  VERSION5: 5.3.2
+  VERSION6: 6.0.0
+  # Language Pack Versions
+  LP_VERSION5: 5.3.2.0
+  LP_VERSION6: 6.0.0.0
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Install xmllint
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils
 
-      - name: Set version and target
-        id: vars
+      - name: Set branch and version
+        id: set_version
         run: |
-          BRANCH_NAME="${GITHUB_REF##*/}"
-
-          # Use manual version input if provided, else read from pkg_${LANGUAGE_CODE}.xml
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          echo "Branch is $BRANCH_NAME"
+          if [ "$BRANCH_NAME" = "joomla5" ]; then
+            VERSION=${VERSION5}
+            LP_VERSION=${LP_VERSION5}
+            PACKAGE_NAME="${EXTENSION_NAME}-joomla5"
+          elif [ "$BRANCH_NAME" = "joomla6" ]; then
+            VERSION=${VERSION6}
+            LP_VERSION=${LP_VERSION6}
+            PACKAGE_NAME="${EXTENSION_NAME}-joomla6"
           else
-            VERSION=$(xmllint --xpath "string(//version)" pkg_${LANGUAGE_CODE}.xml)
+            echo "Unknown branch $BRANCH_NAME"
+            exit 1
           fi
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> $GITHUB_ENV
+          echo "LP_VERSION=$LP_VERSION" >> $GITHUB_ENV
 
-          PACKAGE_NAME="${EXTENSION_NAME}-${BRANCH_NAME}"
-          echo "branch=${BRANCH_NAME}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
+      # Force tag update
+      - name: Force create/update tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f $VERSION
+          git push origin -f $VERSION
+        env:
+          VERSION: ${{ env.VERSION }}
+
+      - name: Set up PHP (if needed for your build)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
 
       - name: Create individual zip files
         run: |
@@ -60,78 +78,170 @@ jobs:
           zip -r build/zips/api_${LANGUAGE_CODE}.zip ${LANGUAGE_CODE}/api_${LANGUAGE_CODE}
           zip -r build/zips/site_${LANGUAGE_CODE}.zip ${LANGUAGE_CODE}/site_${LANGUAGE_CODE}
 
+      # (Optional) sanity check that zip is installed
+      - name: Ensure zip is available
+        run: |
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y zip
+          fi
+
       - name: Create final package zip
         run: |
+          set -euxo pipefail
           mkdir -p build/final
-          cp pkg_${LANGUAGE_CODE}.xml build/zips/
-          cd build/zips
-          zip -r ../final/${{ steps.vars.outputs.package_name }}.zip ./*
-          cd ../..
+
+          # Show what we’re about to package
+          ls -l build/zips || true
+
+          # Ensure the XML is included alongside the three zips
+          cp "pkg_${LANGUAGE_CODE}.xml" build/zips/
+
+          # Create the final zip FROM ABSOLUTE PATHS (no cd needed)
+          # -j strips the directory paths so contents are at the root of the archive
+          zip -j "build/final/${PACKAGE_NAME}.zip" \
+            build/zips/*.zip \
+            "build/zips/pkg_${LANGUAGE_CODE}.xml"
+
+          echo "Final contents:"
+          ls -l build/final
 
       - name: Generate SHA256 and SHA512 hashes
         run: |
           cd build/final
-          sha256sum ${{ steps.vars.outputs.package_name }}.zip > ${{ steps.vars.outputs.package_name }}.zip.sha256
-          sha384sum ${{ steps.vars.outputs.package_name }}.zip > ${{ steps.vars.outputs.package_name }}.zip.sha384
-          sha512sum ${{ steps.vars.outputs.package_name }}.zip > ${{ steps.vars.outputs.package_name }}.zip.sha512
+          sha256sum ${PACKAGE_NAME}.zip > ${PACKAGE_NAME}.zip.sha256
+          sha384sum ${PACKAGE_NAME}.zip > ${PACKAGE_NAME}.zip.sha384
+          sha512sum ${PACKAGE_NAME}.zip > ${PACKAGE_NAME}.zip.sha512
           cd ../..
 
-      - name: Upload package and hashes as artifacts
-        uses: actions/upload-artifact@v4
+      # Create or update the GitHub release
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v1
         with:
-          name: ${{ steps.vars.outputs.package_name }}
-          path: |
-            build/final/${{ steps.vars.outputs.package_name }}.zip
-            build/final/${{ steps.vars.outputs.package_name }}.zip.sha256
-            build/final/${{ steps.vars.outputs.package_name }}.zip.sha384
-            build/final/${{ steps.vars.outputs.package_name }}.zip.sha512
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.PACKAGE_NAME }}
+          draft: false
+          prerelease: ${{ contains(env.BRANCH_NAME, 'joomla6') }}
+          files: |
+            build/final/${{ env.PACKAGE_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit to download folder (optional)
-        if: github.ref == 'refs/heads/joomla5' || github.ref == 'refs/heads/joomla6'
+      - name: Set download URLs for updates.xml
+        id: set_urls
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-          git fetch
-          git checkout ${{ steps.vars.outputs.branch }}
-          mkdir -p downloads
-          cp build/final/* downloads/
-          git add -f downloads/
-          git commit -m "Add new package ${{ steps.vars.outputs.package_name }}"
-          git push
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}"
+          echo "ZIP_URL=${BASE_URL}/${PACKAGE_NAME}.zip" >> $GITHUB_ENV
+          echo "SHA256_URL=${BASE_URL}/${PACKAGE_NAME}.zip.sha256" >> $GITHUB_ENV
+          echo "SHA384_URL=${BASE_URL}/${PACKAGE_NAME}.zip.sha384" >> $GITHUB_ENV
+          echo "SHA512_URL=${BASE_URL}/${PACKAGE_NAME}.zip.sha512" >> $GITHUB_ENV
+
+      - name: Debug URLs
+        run: |
+          echo "ZIP URL: $ZIP_URL"
+          echo "SHA256 URL: $SHA256_URL"
+          echo "SHA384 URL: $SHA384_URL"
+          echo "SHA512 URL: $SHA512_URL"
+          echo "Listing build/zips/"
+          ls -l build/zips/
+          echo "Listing build/final/"
+          ls -l build/final/
 
       - name: Install xmlstarlet
         run: sudo apt-get update && sudo apt-get install -y xmlstarlet
 
       - name: Update updates.xml with current metadata
         run: |
-          PACKAGE_NAME="${{ steps.vars.outputs.package_name }}"
           ZIP_PATH="build/final/${PACKAGE_NAME}.zip"
 
-          VERSION="${{ steps.vars.outputs.version }}"
           SHA256=$(cut -d' ' -f1 build/final/${PACKAGE_NAME}.zip.sha256)
           SHA384=$(cut -d' ' -f1 build/final/${PACKAGE_NAME}.zip.sha384)
           SHA512=$(cut -d' ' -f1 build/final/${PACKAGE_NAME}.zip.sha512)
-          BRANCH="${{ steps.vars.outputs.branch }}"
 
-          DOWNLOAD_URL="https://github.com/ceford/cefjdemos-pkg-${LC_LANGUAGE_CODE}/raw/${BRANCH}/downloads/${PACKAGE_NAME}.zip"
-          CHANGELOG_URL="https://raw.githubusercontent.com/ceford/cefjdemos-pkg-${LC_LANGUAGE_CODE}/${BRANCH}/changelog.xml"
+          DOWNLOAD_URL=$ZIP_URL
 
           xmlstarlet ed \
-            -u "//update/version" -v "$VERSION" \
+            -u "//update/version" -v "$LP_VERSION" \
             -u "//update/downloads/downloadurl" -v "$DOWNLOAD_URL" \
             -u "//update/sha256" -v "$SHA256" \
             -u "//update/sha384" -v "$SHA384" \
             -u "//update/sha512" -v "$SHA512" \
-            -u "//update/changelogurl" -v "$CHANGELOG_URL" \
             updates.xml > updated_updates.xml
 
-          mv updated_updates.xml updates.xml
+          mkdir -p dist
+          mv updated_updates.xml dist/updates.xml
 
-      - name: Commit updated updates.xml
+        # after you build your artifacts (zips, hashes, updates.xml) into ./dist
+        # e.g. dist/updates.xml, dist/*.zip, dist/*.sha256
+
+      - name: Clone gh-pages into ./publish
+        env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+            set -e
+            REPO="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
-          git add updates.xml
-          git commit -m "Update updates.xml with version ${{ steps.vars.outputs.version }}" || echo "No changes to commit"
-          git push origin ${{ steps.vars.outputs.branch }}
+            if git ls-remote --heads "$REPO" gh-pages | grep -q gh-pages; then
+              echo "Cloning existing gh-pages branch"
+              git clone --depth 1 --branch gh-pages "$REPO" publish
+            else
+              echo "Creating new gh-pages branch"
+              git init publish
+              cd publish
+              git checkout -b gh-pages
+              git remote add origin "$REPO"
+              touch .nojekyll
+              git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
+                commit --allow-empty -m "Initialize gh-pages"
+              git push -u origin gh-pages
+              cd ..
+            fi
+
+      - name: Update files in gh-pages
+        run: |
+            set -e
+            BRANCH=${GITHUB_REF_NAME}     # "joomla5" or "joomla6"
+            mkdir -p publish/$BRANCH
+
+            # Copy your branch artifacts
+            cp dist/updates.xml publish/$BRANCH/
+            # If you also generate zips + hashes, include them:
+            # cp dist/*.zip publish/$BRANCH/ || true
+            # cp dist/*.sha256 publish/$BRANCH/ || true
+
+            # (Re)write index.html
+            cat <<EOF > dist/index.html
+            <!doctype html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>${LANGUAGE_NAME}</title>
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+            </head>
+            <body>
+            <h1>${LANGUAGE_NAME} Language Package</h1>
+            <h2>Download for Installation</h2>
+            <ul>
+              <li><a href="https://github.com/ceford/cefjdemos-pkg-gd-gb/releases/download/${VERSION5}/pkg_gd-GB-joomla5.zip">Joomla 5 Installation ZIP</a></li>
+              <li><a href="https://github.com/ceford/cefjdemos-pkg-gd-gb/releases/download/${VERSION6}/pkg_gd-GB-joomla6.zip">Joomla 6 Installation ZIP</a></li>
+            </ul>
+            <h2>Update Files</h2>
+            <p>These files are used by installations to obtain update information. They are not
+            meant for human use.</p>
+            <ul>
+              <li><a href="./joomla5/updates.xml">Joomla 5 updates.xml</a></li>
+              <li><a href="./joomla6/updates.xml">Joomla 6 updates.xml</a></li>
+            </ul>
+            </body>
+            </html>
+            EOF
+
+            cp dist/index.html publish/
+
+      - name: Commit and push ONLY gh-pages content
+        run: |
+            set -e
+            git -C publish config user.name  "github-actions[bot]"
+            git -C publish config user.email "github-actions[bot]@users.noreply.github.com"
+            git -C publish add -A
+            git -C publish commit -m "Deploy ${GITHUB_REF_NAME} at ${GITHUB_SHA}" || echo "No changes to commit"
+            git -C publish push origin gh-pages
