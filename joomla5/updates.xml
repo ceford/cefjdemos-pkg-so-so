@@ -11,9 +11,9 @@
     <downloads>
       <downloadurl type="full" format="zip">https://github.com/ceford/cefjdemos-pkg-so-so/releases/download/5.3.2/pkg_so-SO-joomla5.zip</downloadurl>
     </downloads>
-    <sha256>dae2cb47a0e5ae6fb89125409cc7be10eb429d1eaf6f2c36f8f139ac023b0280</sha256>
-    <sha384>fe2699204240d4a6dde3ecc600aa5d50be4f116d4e9b94bfab7454abc5df8e56d81a0f28fb876e1f53330e51b12a876f</sha384>
-    <sha512>e5db1cefdf3b4bf97a0b044b8db6e01a789f00c6afe2898ef1809fa28010e1127b322ac34d6542f6c4f47b7e449b8237b7c49d34cf434d22373c367c850f050b</sha512>
+    <sha256>d219f293cad901280b11f31902de304b354bbf722068b0d43e27b8b5b26ac27f</sha256>
+    <sha384>195617210c40f9e4bd84657c8c73b5ce078ee8d573a61b7c71ffcae6d053283909766aee395fa732f44acfd8f7fe20fc</sha384>
+    <sha512>0b8a9afce858a845127d77d9eca1e7a9de0229c8e0917c5ae29175afa3ef185763af768a2f9c1ab58ff39073b9743b5f2ab77b6280043c30c1504707fb8ec5f1</sha512>
     <changelogurl>https://raw.githubusercontent.com/ceford/cefjdemos-pkg-so-so/joomla5/changelog.xml</changelogurl>
     <tags>
       <tag>stable</tag>
